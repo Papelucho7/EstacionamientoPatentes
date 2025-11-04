@@ -1,8 +1,0 @@
-CREATE TABLE RegistrosPatentes (
-    Id INT IDENTITY(1,1) PRIMARY KEY,
-    Nombre NVARCHAR(50) DEFAULT 'Sin nombre',
-    Apellido NVARCHAR(50) DEFAULT 'Sin apellido',
-    Telefono NVARCHAR(20) DEFAULT 'Sin teléfono',
-    Patente NVARCHAR(20),
-    FechaRegistro DATETIME DEFAULT GETDATE()
-);
