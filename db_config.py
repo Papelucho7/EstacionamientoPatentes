@@ -1,11 +1,17 @@
 import pyodbc
+import configparser
 
 def get_connection():
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    server = config['database']['server']
+    database = config['database']['database']
+
     try:
         conn = pyodbc.connect(
-            'DRIVER={ODBC Driver 17 for SQL Server};'
-            'SERVER=NITRO5-LUIS\SQLEXPRESS;'
-            'DATABASE=EstacionamientoPatentes;'
+            f'DRIVER={{ODBC Driver 17 for SQL Server}};'
+            f'SERVER={server};'
+            f'DATABASE={database};'
             'Trusted_Connection=yes;'
             'TrustServerCertificate=yes;'
         )
@@ -16,6 +22,7 @@ def get_connection():
         print("❌ Error al conectar a SQL Server:")
         print(e)
         return None
+
 
 
 # Ejemplo de uso
