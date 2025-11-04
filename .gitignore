@@ -1,0 +1,25 @@
+# Ignorar entorno virtual
+venv/
+
+# Ignorar archivos de caché de Python
+__pycache__/
+*.pyc
+
+# Ignorar archivos de configuración local (que contienen credenciales o rutas específicas)
+config.ini
+
+# Ignorar archivos de datos generados o modelos grandes que no deben estar en el control de versiones
+# Si 'model/best.pt' es muy grande y se gestiona con Git LFS, no lo ignores aquí.
+# Si es un modelo pequeño o quieres que esté en el repo, elimínalo de aquí.
+model/best.pt
+
+# Ignorar archivos de video de ejemplo si no quieres que estén en el repo
+img/*.mp4
+
+# Ignorar logs u otros archivos temporales
+*.log
+*.tmp
+
+# Ignorar archivos específicos del sistema operativo
+.DS_Store
+thumbs.db
