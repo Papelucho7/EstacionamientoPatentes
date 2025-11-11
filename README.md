@@ -42,8 +42,9 @@
     pip install -r requirements.txt
     ```
 
-4.  **Descargar modelos de EasyOCR:**
-    La primera vez que ejecutes EasyOCR, descargará automáticamente los modelos de idioma necesarios. Asegúrate de tener conexión a internet.
+4.  **Ejecutar script para crear tablas en base de datos:**
+    En el directorio del proyecto hay un script EstacionamientoPatentes.sql, ejecutarlo en sql server para crear las tablas
+
 
 ## Uso
 
@@ -55,5 +56,5 @@ python gui.py
 
 Desde la GUI, puedes:
 
--   **Procesar Video:** Seleccionar un archivo de video local para que el sistema detecte y registre las patentes.
+-   **Procesar Video:** Seleccionar un archivo de video local para que el sistema detecte y registre las patentes. El video esta en img/VideoFuncional.mp4
 -   **Procesar Cámara:** Introducir la URL de una cámara IP para realizar el reconocimiento de patentes en tiempo real.
