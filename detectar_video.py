@@ -1,31 +1,38 @@
 import cv2
 import collections
-from core import model, ocr, es_patente_valida, preprocesar_para_ocr, guardar_en_sql, son_patentes_similares
+import time
+from core import model, ocr, es_patente_valida, preprocesar_para_ocr, registrar_movimiento_patente, son_patentes_similares
 
-# --- Función Principal de Procesamiento (Lógica de Colab) ---
-def procesar_video(ruta_video, frame_skip=4):
+# --- Función Principal de Procesamiento de Video (Refactorizada para GUI) ---
+def procesar_video(ruta_video, frame_callback, stop_event, frame_skip=3):
+    """
+    Procesa un video para detectar patentes y llama a un callback en cada frame.
+    :param ruta_video: Ruta del archivo de video.
+    :param frame_callback: Función a la que se le pasa cada frame procesado.
+    :param stop_event: threading.Event para detener el bucle de procesamiento.
+    :param frame_skip: Número de frames a saltar para optimizar el rendimiento.
+    """
     cap = cv2.VideoCapture(ruta_video)
     if not cap.isOpened():
         print(f"Error al abrir el video: '{ruta_video}'")
         return
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    print(f"Video cargado: {total_frames} frames a {fps} FPS. Se procesará 1 de cada {frame_skip} frames.")
+    print(f"Video cargado. Procesando a aprox. {fps/frame_skip:.1f} FPS.")
 
-    # --- Variables para la lógica de confirmación ---
-    patente_buffer = collections.deque(maxlen=30) # Almacena las últimas N lecturas válidas
-    patentes_confirmadas = set() # Almacena las patentes ya guardadas en esta sesión
-    CONFIRMATION_THRESHOLD = 3 # Número de veces que una patente debe ser leída para confirmarse
+    patente_buffer = collections.deque(maxlen=30)
+    patentes_confirmadas = set()
+    CONFIRMATION_THRESHOLD = 3
     frame_actual = 0
 
-    while True:
+    while not stop_event.is_set():
         ret, frame = cap.read()
         if not ret:
+            print("Fin del video.")
             break
 
         if frame_actual % frame_skip == 0:
-            results = model.predict(frame, conf=0.6, verbose=False) # Usamos conf=0.6
+            results = model.predict(frame, conf=0.6, verbose=False)
             
             for r in results:
                 for box in r.boxes:
@@ -37,47 +44,63 @@ def procesar_video(ruta_video, frame_skip=4):
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
                         patente_recortada = frame[y1:y2, x1:x2]
 
-                        # 1. Pre-procesar la imagen para mejorar la lectura
-                        imagen_mejorada = preprocesar_para_ocr(patente_recortada)
-                        
-                        # 2. Leer texto con OCR
-                        ocr_result = ocr.readtext(imagen_mejorada, detail=0, paragraph=True)
+                        try:
+                            imagen_mejorada = preprocesar_para_ocr(patente_recortada)
+                            ocr_result = ocr.readtext(imagen_mejorada, detail=0, paragraph=True)
 
-                        if ocr_result:
-                            texto_sucio = " ".join(ocr_result)
-                            texto_limpio = "".join(filter(str.isalnum, texto_sucio)).upper()
+                            if ocr_result:
+                                texto_sucio = " ".join(ocr_result)
+                                texto_limpio = "".join(filter(str.isalnum, texto_sucio)).upper()
 
-                            # 3. Validar formato de la patente
-                            if es_patente_valida(texto_limpio):
-                                
-                                # 4. Lógica de confirmación por buffer
-                                es_similar_a_confirmada = any(son_patentes_similares(texto_limpio, p_confirmada) for p_confirmada in patentes_confirmadas)
-                                
-                                if not es_similar_a_confirmada:
-                                    patente_buffer.append(texto_limpio)
-                                    count = patente_buffer.count(texto_limpio)
+                                if es_patente_valida(texto_limpio):
+                                    es_similar_a_confirmada = any(son_patentes_similares(texto_limpio, p_confirmada) for p_confirmada in patentes_confirmadas)
+                                    
+                                    if not es_similar_a_confirmada:
+                                        patente_buffer.append(texto_limpio)
+                                        count = patente_buffer.count(texto_limpio)
 
-                                    if count >= CONFIRMATION_THRESHOLD and texto_limpio not in patentes_confirmadas:
-                                        print(f"⭐ Patente CONFIRMADA: {texto_limpio}")
-                                        guardar_en_sql(texto_limpio)
-                                        patentes_confirmadas.add(texto_limpio)
-                                
-                                # Dibujar texto en el frame
-                                color = (0, 255, 0) if texto_limpio in patentes_confirmadas else (255, 255, 0)
-                                cv2.putText(frame, texto_limpio, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                                        if count >= CONFIRMATION_THRESHOLD and texto_limpio not in patentes_confirmadas:
+                                            print(f"⭐ Patente CONFIRMADA: {texto_limpio}")
+                                            registrar_movimiento_patente(texto_limpio)
+                                            patentes_confirmadas.add(texto_limpio)
+                                    
+                                    color = (0, 255, 0) if texto_limpio in patentes_confirmadas else (255, 255, 0)
+                                    cv2.putText(frame, texto_limpio, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                        except Exception as e:
+                            print(f"Error procesando recorte de patente: {e}")
 
-        cv2.imshow("Detección en Video - Lógica Avanzada", frame)
-        if cv2.waitKey(1) & 0xFF == 27: # ESC para salir
-            break
+        # Enviar el frame a la GUI a través del callback
+        if frame_callback:
+            frame_callback(frame)
         
         frame_actual += 1
+        # Pequeña pausa para no saturar la GUI y controlar la velocidad de reproducción
+        time.sleep(1 / (fps * 1.5))
+
 
     cap.release()
-    cv2.destroyAllWindows()
     print("\n--- Proceso de video finalizado. ---")
-    print(f"Se confirmaron {len(patentes_confirmadas)} patentes únicas en esta sesión: {sorted(list(patentes_confirmadas))}")
-
+    # La GUI será notificada de la finalización porque el hilo terminará.
 
 if __name__ == "__main__":
-    # Asegúrate de que la ruta al video sea la correcta
-    procesar_video("img/VideoFuncional.mp4")
+    # Ejemplo de cómo se podría usar ahora (sin GUI)
+    # Para probar, necesitaríamos un callback simple y un evento de stop
+    import threading
+
+    def simple_frame_viewer(frame):
+        cv2.imshow("Test Viewer", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            # Esto no detendrá el bucle, solo es para el waitKey
+            pass
+
+    stop_event = threading.Event()
+    
+    # Simular la ejecución: presionar Ctrl+C en la terminal para detener
+    try:
+        print("Ejecutando prueba. Presiona Ctrl+C en la terminal para detener.")
+        procesar_video("img/VideoFuncional.mp4", frame_callback=simple_frame_viewer, stop_event=stop_event)
+    except KeyboardInterrupt:
+        print("\nDeteniendo por el usuario.")
+        stop_event.set()
+    
+    cv2.destroyAllWindows()

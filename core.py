@@ -1,4 +1,3 @@
-
 import cv2
 from ultralytics import YOLO
 import easyocr
@@ -6,6 +5,7 @@ import re
 import collections
 import numpy as np
 from db_config import get_connection
+import pyodbc # Added for specific exception handling and type hinting
 
 # --- Cargar modelo YOLO entrenado y OCR ---
 model = YOLO('model/best.pt')
@@ -60,20 +60,145 @@ def preprocesar_para_ocr(imagen_recortada):
 
     return thresh
 
-def guardar_en_sql(patente):
-    """Guarda la patente confirmada en la base de datos."""
+def registrar_movimiento_patente(patente):
+    """
+    Registra el movimiento de una patente (entrada/salida) en la base de datos.
+    Actualiza la tabla 'Vehiculos' y registra el movimiento en 'Movimientos'.
+    """
+    conn = None
     try:
         conn = get_connection()
         if not conn:
             print("Error: No se pudo establecer conexión con la base de datos.")
             return
+
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO RegistrosPatentes (Patente, FechaRegistro)
-            VALUES (?, GETDATE())
-        """, (patente,))
-        conn.commit()
-        conn.close()
-        print(f"✅ Base de Datos: Patente ''{patente}'' guardada.")
+
+        # 1. Verificar el estado actual de la patente en la tabla Vehiculos
+        cursor.execute("SELECT Estado FROM Vehiculos WHERE Patente = ?", (patente,))
+        resultado = cursor.fetchone()
+
+        tipo_movimiento = ""
+        mensaje = ""
+
+        if resultado is None:
+            # La patente no existe, es una ENTRADA
+            tipo_movimiento = "Entrada"
+            cursor.execute("INSERT INTO Vehiculos (Patente, Estado, UltimoMovimiento) VALUES (?, ?, GETDATE())",
+                           (patente, "Dentro"))
+            mensaje = f"✅ ENTRADA registrada para la patente: {patente}"
+        elif resultado[0] == "Fuera":
+            # La patente existe y está "Fuera", es una ENTRADA
+            tipo_movimiento = "Entrada"
+            cursor.execute("UPDATE Vehiculos SET Estado = ?, UltimoMovimiento = GETDATE() WHERE Patente = ?",
+                           ("Dentro", patente))
+            mensaje = f"✅ ENTRADA registrada para la patente: {patente}"
+        elif resultado[0] == "Dentro":
+            # La patente existe y está "Dentro", es una SALIDA
+            tipo_movimiento = "Salida"
+            cursor.execute("UPDATE Vehiculos SET Estado = ?, UltimoMovimiento = GETDATE() WHERE Patente = ?",
+                           ("Fuera", patente))
+            mensaje = f"✅ SALIDA registrada para la patente: {patente}"
+        
+        # 2. Registrar el movimiento en la tabla Movimientos
+        if tipo_movimiento: # Solo si se determinó un tipo de movimiento
+            cursor.execute("INSERT INTO Movimientos (Patente, TipoMovimiento, FechaHora) VALUES (?, ?, GETDATE())",
+                           (patente, tipo_movimiento))
+            conn.commit()
+            print(mensaje)
+        else:
+            print(f"ℹ️ No se pudo determinar el movimiento para la patente: {patente}")
+
+    except pyodbc.Error as ex:
+        sqlstate = ex.args[0]
+        if sqlstate == '23000': # Integrity constraint violation (e.g., duplicate primary key)
+            print(f"❌ Error de integridad al registrar movimiento para {patente}: {ex}")
+        else:
+            print(f"❌ Error de base de datos al registrar movimiento para {patente}: {ex}")
+        if conn:
+            conn.rollback() # Revertir cualquier cambio si hay un error
     except Exception as e:
-        print(f"❌ Error al guardar en SQL Server: {e}")
+        print(f"❌ Error inesperado al registrar movimiento para {patente}: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+def obtener_ocupacion_estacionamiento():
+    """
+    Obtiene el número de vehículos actualmente "Dentro" del estacionamiento.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("Error: No se pudo establecer conexión con la base de datos para obtener ocupación.")
+            return 0
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Vehiculos WHERE Estado = 'Dentro'")
+        count = cursor.fetchone()[0]
+        return count
+    except Exception as e:
+        print(f"❌ Error al obtener la ocupación del estacionamiento: {e}")
+        return 0
+    finally:
+        if conn:
+            conn.close()
+
+def obtener_patentes_dentro():
+    """
+    Obtiene una lista de las patentes de los vehículos actualmente "Dentro".
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("Error: No se pudo establecer conexión con la base de datos.")
+            return []
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT Patente FROM Vehiculos WHERE Estado = 'Dentro' ORDER BY UltimoMovimiento DESC")
+        patentes = [row[0] for row in cursor.fetchall()]
+        return patentes
+    except Exception as e:
+        print(f"❌ Error al obtener las patentes de vehículos dentro: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def obtener_ultimos_movimientos(limit=50):
+    """
+    Obtiene una lista de los últimos movimientos registrados.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("Error: No se pudo establecer conexión con la base de datos.")
+            return []
+
+        cursor = conn.cursor()
+        # Usamos TOP para limitar los resultados directamente en la consulta SQL
+        cursor.execute("""
+            SELECT TOP (?) Patente, TipoMovimiento, FechaHora
+            FROM Movimientos
+            ORDER BY FechaHora DESC
+        """, (limit,))
+        
+        # Formateamos la fecha para que sea más legible en la GUI
+        movimientos = []
+        for row in cursor.fetchall():
+            patente, tipo, fecha = row
+            fecha_formateada = fecha.strftime('%Y-%m-%d %H:%M:%S')
+            movimientos.append((patente, tipo, fecha_formateada))
+            
+        return movimientos
+    except Exception as e:
+        print(f"❌ Error al obtener los últimos movimientos: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()

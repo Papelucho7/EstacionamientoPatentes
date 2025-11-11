@@ -1,6 +1,6 @@
 import cv2
 import collections
-from core import model, ocr, es_patente_valida, preprocesar_para_ocr, guardar_en_sql, son_patentes_similares
+from core import model, ocr, es_patente_valida, preprocesar_para_ocr, registrar_movimiento_patente, son_patentes_similares
 
 
 # --- Función Principal de Procesamiento para Cámara IP ---
@@ -62,7 +62,7 @@ def procesar_camara(url_camara):
 
                                     if count >= CONFIRMATION_THRESHOLD and texto_limpio not in patentes_confirmadas:
                                         print(f"⭐ Patente CONFIRMADA: {texto_limpio}")
-                                        guardar_en_sql(texto_limpio)
+                                        registrar_movimiento_patente(texto_limpio)
                                         patentes_confirmadas.add(texto_limpio)
                                     
                                 # Dibujar texto en el frame
