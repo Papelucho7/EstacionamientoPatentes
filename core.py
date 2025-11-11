@@ -147,27 +147,33 @@ def obtener_ocupacion_estacionamiento():
         if conn:
             conn.close()
 
-def obtener_patentes_dentro():
+def obtener_vehiculos_dentro():
     """
-    Obtiene una lista de las patentes de los vehículos actualmente "Dentro".
+    Obtiene una lista de los vehículos actualmente "Dentro",
+    incluyendo la patente y el nombre del propietario si está asignado.
     """
-    conn = None
+    sql = """
+        SELECT v.Patente, p.Nombre, p.Apellido
+        FROM Vehiculos v
+        LEFT JOIN Persona p ON v.RUT_Persona = p.RUT
+        WHERE v.Estado = 'Dentro'
+        ORDER BY v.UltimoMovimiento DESC
+    """
     try:
         conn = get_connection()
-        if not conn:
-            print("Error: No se pudo establecer conexión con la base de datos.")
-            return []
-
+        if not conn: return []
         cursor = conn.cursor()
-        cursor.execute("SELECT Patente FROM Vehiculos WHERE Estado = 'Dentro' ORDER BY UltimoMovimiento DESC")
-        patentes = [row[0] for row in cursor.fetchall()]
-        return patentes
+        cursor.execute(sql)
+        vehiculos = []
+        for row in cursor.fetchall():
+            propietario = f"{row.Nombre} {row.Apellido}" if row.Nombre else "Sin Asignar"
+            vehiculos.append((row.Patente, propietario))
+        return vehiculos
     except Exception as e:
-        print(f"❌ Error al obtener las patentes de vehículos dentro: {e}")
+        print(f"❌ Error al obtener vehículos dentro: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
 def obtener_ultimos_movimientos(limit=50):
     """
@@ -202,3 +208,218 @@ def obtener_ultimos_movimientos(limit=50):
     finally:
         if conn:
             conn.close()
+
+# --- Funciones CRUD para Roles ---
+
+def crear_rol(nombre):
+    """Crea un nuevo rol en la base de datos."""
+    sql = "INSERT INTO Rol (Nombre) VALUES (?)"
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute(sql, (nombre,))
+        conn.commit()
+        return True, None
+    except pyodbc.IntegrityError:
+        return False, f"El rol '{nombre}' ya existe."
+    except Exception as e:
+        print(f"❌ Error al crear rol: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
+
+def obtener_roles():
+    """Obtiene todos los roles de la base de datos."""
+    sql = "SELECT ID, Nombre FROM Rol ORDER BY Nombre"
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        roles = cursor.fetchall()
+        return roles
+    except Exception as e:
+        print(f"❌ Error al obtener roles: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def actualizar_rol(rol_id, nombre):
+    """Actualiza el nombre de un rol existente."""
+    sql = "UPDATE Rol SET Nombre = ? WHERE ID = ?"
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute(sql, (nombre, rol_id))
+        conn.commit()
+        return True, None
+    except pyodbc.IntegrityError:
+        return False, f"El nombre de rol '{nombre}' ya está en uso."
+    except Exception as e:
+        print(f"❌ Error al actualizar rol: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
+
+def eliminar_rol(rol_id):
+    """Elimina un rol de la base de datos."""
+    sql = "DELETE FROM Rol WHERE ID = ?"
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute(sql, (rol_id,))
+        conn.commit()
+        return True, None
+    except pyodbc.IntegrityError:
+        return False, "No se puede eliminar el rol porque está asignado a una o más personas."
+    except Exception as e:
+        print(f"❌ Error al eliminar rol: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
+
+# --- Funciones CRUD para Personas ---
+
+def crear_persona(rut, nombre, apellido, telefono, id_rol, activo):
+    """Crea una nueva persona en la base de datos."""
+    sql = "INSERT INTO Persona (RUT, Nombre, Apellido, Telefono, ID_Rol, Activo) VALUES (?, ?, ?, ?, ?, ?)"
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute(sql, (rut, nombre, apellido, telefono, id_rol, activo))
+        conn.commit()
+        return True, None
+    except pyodbc.IntegrityError:
+        return False, f"El RUT '{rut}' ya existe."
+    except Exception as e:
+        print(f"❌ Error al crear persona: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
+
+def obtener_personas():
+    """Obtiene todas las personas con el nombre de su rol."""
+    sql = """
+        SELECT p.RUT, p.Nombre, p.Apellido, p.Telefono, r.Nombre as Rol, p.Activo, p.ID_Rol
+        FROM Persona p
+        LEFT JOIN Rol r ON p.ID_Rol = r.ID
+        ORDER BY p.Apellido, p.Nombre
+    """
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        personas = cursor.fetchall()
+        return personas
+    except Exception as e:
+        print(f"❌ Error al obtener personas: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def actualizar_persona(rut, nombre, apellido, telefono, id_rol, activo):
+    """Actualiza los datos de una persona existente."""
+    sql = """
+        UPDATE Persona 
+        SET Nombre = ?, Apellido = ?, Telefono = ?, ID_Rol = ?, Activo = ?
+        WHERE RUT = ?
+    """
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute(sql, (nombre, apellido, telefono, id_rol, activo, rut))
+        conn.commit()
+        return True, None
+    except Exception as e:
+        print(f"❌ Error al actualizar persona: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
+
+def eliminar_persona(rut):
+    """Elimina una persona de la base de datos."""
+    # Primero, desvincular vehículos asociados
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute("UPDATE Vehiculos SET RUT_Persona = NULL WHERE RUT_Persona = ?", (rut,))
+        # Ahora, eliminar la persona
+        cursor.execute("DELETE FROM Persona WHERE RUT = ?", (rut,))
+        conn.commit()
+        return True, None
+    except Exception as e:
+        print(f"❌ Error al eliminar persona: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
+
+# --- Funciones CRUD para Vehiculos (Asignación) ---
+
+def obtener_vehiculos():
+    """
+    Obtiene todos los vehículos registrados, indicando su propietario.
+    """
+    sql = """
+        SELECT v.Patente, v.RUT_Persona, p.Nombre, p.Apellido
+        FROM Vehiculos v
+        LEFT JOIN Persona p ON v.RUT_Persona = p.RUT
+        ORDER BY v.Patente
+    """
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        vehiculos = []
+        for row in cursor.fetchall():
+            propietario = f"{row.Nombre} {row.Apellido}" if row.RUT_Persona else "Sin Asignar"
+            vehiculos.append((row.Patente, row.RUT_Persona or '', propietario))
+        return vehiculos
+    except Exception as e:
+        print(f"❌ Error al obtener vehículos: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def obtener_personas_para_asignacion():
+    """
+    Obtiene una lista simplificada de personas (RUT y Nombre Completo) para usar en comboboxes.
+    """
+    sql = "SELECT RUT, Nombre, Apellido FROM Persona WHERE Activo = 1 ORDER BY Apellido, Nombre"
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        return cursor.fetchall()
+    except Exception as e:
+        print(f"❌ Error al obtener personas para asignación: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def asignar_vehiculo(patente, rut_persona):
+    """
+    Asigna o desasigna un vehículo a una persona.
+    Si rut_persona es None, se desasigna.
+    """
+    sql = "UPDATE Vehiculos SET RUT_Persona = ? WHERE Patente = ?"
+    try:
+        conn = get_connection()
+        if not conn: return False, "Sin conexión a BD"
+        cursor = conn.cursor()
+        cursor.execute(sql, (rut_persona, patente))
+        conn.commit()
+        return True, None
+    except Exception as e:
+        print(f"❌ Error al asignar vehículo: {e}")
+        return False, str(e)
+    finally:
+        if conn: conn.close()
