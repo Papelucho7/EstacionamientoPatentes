@@ -3,7 +3,7 @@ import collections
 from core import model, ocr, es_patente_valida, preprocesar_para_ocr, guardar_en_sql, son_patentes_similares
 
 # --- Función Principal de Procesamiento (Lógica de Colab) ---
-def procesar_video(ruta_video, frame_skip=3):
+def procesar_video(ruta_video, frame_skip=4):
     cap = cv2.VideoCapture(ruta_video)
     if not cap.isOpened():
         print(f"Error al abrir el video: '{ruta_video}'")
