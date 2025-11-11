@@ -15,6 +15,7 @@ model/best.pt
 
 # Ignorar archivos de video de ejemplo si no quieres que estén en el repo
 img/*.mp4
+img/VideoFuncional.mp4
 
 # Ignorar logs u otros archivos temporales
 *.log
